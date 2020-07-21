@@ -1,0 +1,201 @@
+# -*- coding:UTF-8 -*-
+# WANG Yanchao
+# time:2020-5-28
+import numpy as np
+import pandas as pd
+from datetime import datetime,timedelta
+import matplotlib as mpl
+mpl.rcParams['font.sans-serif']=['SimHei'] #用来正常显示中文标签
+mpl.rcParams['axes.unicode_minus']=False#用来正常显示负号
+import matplotlib.pyplot as plt
+import warnings
+warnings.filterwarnings('ignore')#关闭提醒
+pd.set_option('max_colwidth', 120)#每列最大宽度
+pd.set_option('display.max_columns',500)#显示的最大列数
+pd.set_option('expand_frame_repr', False)#是否换行
+import os
+
+pd.set_option('display.unicode.ambiguous_as_wide', True)
+pd.set_option('display.unicode.east_asian_width', True)
+
+path1 = "/Users/liupanfeng/我的学习/python课件/data_for_class2/资产负债表203926062/FS_Combas.csv"
+path2 = "/Users/liupanfeng/我的学习/python课件/data_for_class2/现金流量表（直接法）205229448/FS_Comscfd.csv"
+path3 = "/Users/liupanfeng/我的学习/python课件/data_for_class2/所有者权益变动表205500365/FN_Fn046.csv"
+path4 = "/Users/liupanfeng/我的学习/python课件/data_for_class2/利润表204957903/FS_Comins.csv"
+path5 = "/Users/liupanfeng/我的学习/python课件/data_for_class2/红利分配文件211753491/CD_Dividend.csv"
+
+asset=pd.read_csv(path1)
+#print(asset)
+asset1=asset[asset['Typrep'].isin(['A'])]  ##“A＝合并报表”、“B＝母公司报表”
+list1=['Stkcd','Accper','少数股东权益','流动资产合计','货币资金','资产总计','短期借款','交易性金融负债','衍生金融负债','应付票据','应付账款','预收款项','流动负债合计','长期借款','应付债券','长期应付款','预计负债','递延所得税负债','其他非流动负债','递延收益-非流动负债','负债合计']
+list2=['Stkcd','Accper','A003200000','A001100000','A001101000','A001000000','A002101000','A002105000','A0f2106000','A002107000','A002108000','A002109000','A002100000','A002201000','A002203000','A002204000','A002207000','A002208000','A002209000','A002210000','A002000000']
+new_asset=pd.DataFrame()
+new_asset[list1]=asset1[list2]
+#print(new_asset)
+new_asset.fillna(value=0,inplace=True)
+
+#现金流量表导入，及整理
+cash=pd.read_csv(path2)
+cash=cash[cash['Typrep'].isin(['A'])]
+cash=cash[['Stkcd','Accper','Typrep','C001001000','C001000000','C003006000']]
+cash.rename(columns={'C001001000':'销售商品现金','C001000000':'经营现金净额','C003006000':'分配股利利息支付现金'},inplace=True)
+cash.fillna(value=0)
+#print(cash)
+
+#利润表导入，及处理
+income=pd.read_csv(path4)
+income=income[income['Typrep'].isin(['A'])]
+income=income[['Stkcd','Accper','Typrep','B002100000','B002000101','B001000000','B002000000']]
+income.rename(columns={'B002100000':'所得税费用','B002000101':'归母净利润','B001000000':'利润总额','B002000000':'净利润'},inplace=True)
+income=income.dropna()
+#print(income)
+
+#导入分红数据
+pay=pd.read_csv(path5)
+pay=pay[['Stkcd','Finyear','Numdiv']]
+pay.rename(columns={'Finyear':'year','Numdiv':'派息金额'},inplace=True)
+pay=pay.fillna(value=0)
+g_pay=pay.groupby(by=['Stkcd','year']).sum()
+g_pay=g_pay.reset_index()
+#print(g_pay)
+
+#合并三大报表数据
+fin_data=pd.merge(pd.merge(income,cash,on=['Stkcd','Accper'],how='inner'),new_asset,on=['Stkcd','Accper'],how='inner')
+
+#导入行业数据，由于行业数据是截面数据需要每年分别从wind上导出。这里简单起见，以最新截面数据为例
+path6="/Users/liupanfeng/我的学习/python课件/data_for_class2/上市公司基本情况文件215242210 (1)/HLD_Copro.csv"
+indu=pd.read_csv(path6)
+indu=indu[['Stkcd','Nnindnme','Nnindcd','Nindnme','Nindcd','Indnme','Indcd','Regcap']]
+#print(indu)
+
+fin_data['Accper']=pd.to_datetime(fin_data['Accper'])
+fin_data['month']=fin_data['Accper'].dt.month
+fin_data['year']=fin_data['Accper'].dt.year
+fin_data=fin_data[fin_data['month'].isin([12])]
+
+#合并分和行业红数据
+final_data=pd.merge(g_pay,fin_data,on=['Stkcd','year'],how='right')
+final_data=pd.merge(final_data,indu,on=['Stkcd'],how='left')
+final_data.fillna(value=0,inplace=True)
+print(final_data)
+
+'''负债相关指标计算'''
+#数据预处理，排除资产为0的
+final_data=final_data[~final_data['资产总计'].isin([0])]
+final_data=final_data[~final_data['流动资产合计'].isin([0])]
+#公式1，总负债与总资产比值
+final_data['lev_all']=final_data['负债合计']/final_data['资产总计']
+final_data=final_data[final_data['lev_all']<1.]
+final_data=final_data[final_data['lev_all']>0]
+# print(final_data)
+final_data['lev_plus_owner']=(final_data['负债合计']+final_data['少数股东权益']-final_data['预收款项']-final_data['货币资金'])/final_data['资产总计']
+final_data['lev_plus_owner2']=(final_data['负债合计']+final_data['少数股东权益']-final_data['货币资金'])/final_data['资产总计']
+final_data['loan_short']=final_data['短期借款']/final_data['流动资产合计']
+final_data=final_data[final_data['分配股利利息支付现金']>0]
+final_data['修正所得税费用']=final_data['所得税费用'].apply(lambda x:x if x>0. else 0.)
+#偿付能力
+final_data['ability_payoff']=(final_data['归母净利润']+final_data['修正所得税费用']+final_data['分配股利利息支付现金'])/final_data['分配股利利息支付现金']
+#经营活动现金净流量/年末流动负债
+final_data['cash_debt_short']=final_data['经营现金净额']/final_data['流动负债合计']
+final_data['debt_structure']=final_data['短期借款']/final_data['负债合计']
+#剔除金融行业
+final_data=final_data[~final_data['Indnme'].isin(['金融'])]
+
+from scipy.stats.mstats import winsorize
+def using_mstats(s):
+    return winsorize(s,limits=[0.01,0.01])
+final_data[['lev_plus_owner','lev_all','loan_short','cash_debt_short','debt_structure']]=final_data[['lev_plus_owner','lev_all','loan_short','cash_debt_short','debt_structure']].apply(using_mstats,axis=0)
+print(final_data)
+
+def Group_by_var(data,vars):
+    '''
+    :param data: input data
+    :param vars: input vars
+    :return: output data
+    '''
+    data['按年分级']=data.groupby(by=['year'])[[vars]].transform(lambda x:pd.cut(x,10,labels=list('0123456789')))
+    data['分级']=pd.cut(data[vars],10,labels=list('0123456789'))
+    data=data.sort_values(by=['Stkcd','Accper'])
+    g_data=data.groupby('Stkcd')
+    y_vars1=vars+'_fj'
+    y_vars2=vars+'_fw'
+    y_vars12=vars+'_fjYear'
+    y_vars22=vars+'_fwYear'
+    data[y_vars1]=g_data['分级'].shift(1)
+    data[y_vars12]=data.groupby('Stkcd')['按年分级'].shift(1)
+    data[vars]=g_data[vars].shift(1)
+    data=data.dropna()
+    data=data[['Stkcd','Accper','year',vars,y_vars1,y_vars12]]
+    return data
+data=final_data.copy()
+df1=Group_by_var(data,'lev_all')
+df2=Group_by_var(data,'loan_short')
+df3=Group_by_var(data,'cash_debt_short')
+list_x=['lev_all','loan_short','cash_debt_short']
+df_list=[]
+for x in list_x:
+    data_lev=Group_by_var(data,x)
+    df_list.append(data_lev)
+data_lev=pd.concat(df_list,axis=1)
+print(data_lev)
+data_lev2=data_lev.iloc[:,~data_lev.columns.duplicated()]
+print(data_lev2)
+f1 = data_lev2.copy()
+
+#####通用部分
+H=pd.HDFStore('/Users/liupanfeng/我的学习/python课件/我的数据/hdf_data.h5')
+m=pd.read_csv('/Users/liupanfeng/我的学习/python课件/我的数据/basedata.csv')###之前处理的股票基础数据部分
+H['basedata']=m
+H.close()
+basedata=pd.read_hdf('/Users/liupanfeng/我的学习/python课件/我的数据/hdf_data.h5', 'basedata')
+
+basedata['个股涨跌幅'].fillna(value=0, inplace=True)   #给0的话，会影响实际回测的数据
+# print(basedata)
+basedata['个股涨跌幅'] = basedata['个股涨跌幅'].apply(lambda x: x if abs(x) <= 9 else 0)  #对于ST的情况其实也需要考虑的，涨停和跌停无法买卖，需要排除
+data = basedata.copy()
+data['pct_chg'] = data['个股涨跌幅'].fillna(value=0)
+all_data = data[data['上市板'].isin(['主板'])]         #限制上市版为主板
+all_data['Stkcd'] = all_data['Stkcd'].apply(lambda x: x[0:6])
+all_data['Stkcd'] = all_data['Stkcd'].astype('int')
+all_data['year'] = pd.to_datetime(all_data['Reptdt']).dt.year
+
+#看下之前的Reptdt_y怎么来的，是不是默认出来的
+data_lev_all = pd.merge(f1, all_data, on=['Stkcd', 'year'], how='inner',suffixes=('_x', '_y'))
+
+lev_all_soe = data_lev_all.groupby(['Reptdt', 'lev_all_fjYear'])
+get_average_msoe = lambda g: np.average(g['大盘涨跌幅'], weights=g['stock_value'])
+lev_all_soe = data_lev_all.groupby(['Reptdt', 'lev_all_fjYear'])
+result_cut_msoe = lev_all_soe.apply(get_average_msoe)
+result_cut_msoe = result_cut_msoe.reset_index()
+get_average_soe = lambda g: np.average(g['个股涨跌幅'], weights=g['stock_value'])
+result_cut_soe = lev_all_soe.apply(get_average_soe) # unstack可以将多层索引的结果转换成单层的dataframe
+result_cut_soe = result_cut_soe.reset_index()
+result_lev_soe = pd.merge(result_cut_soe, result_cut_msoe, on=['Reptdt', 'lev_all_fjYear'], how='inner')
+# 根据产权性质，soe按照日期求每天不同股票的涨跌幅均值
+final_lev_soe = result_lev_soe.copy()
+final_lev_soe['market_return'] = (result_lev_soe['0_y'] / 100 + 1.0)
+final_lev_soe['stock_return'] = (result_lev_soe['0_x'] / 100 + 1.0)
+# 分组求累积
+final_lev_soe['equity_curve'] = final_lev_soe.groupby('lev_all_fjYear')['stock_return'].cumprod()
+final_lev_soe['benchmark'] = final_lev_soe.groupby('lev_all_fjYear')['market_return'].cumprod()
+
+# f1=f1.set_index('Reptdt_y')
+# fig,ax=plt.subplots(1,1,figsize=(20,10),dpi=80)
+#
+# ax.plot(f1[f1['lev_all_fjYear'].isin([0])].index, f1[f1['lev_all_fjYear'].isin([0])]['equity_curve'].values,
+#         color='r', linestyle='-', label='Pri')
+# ax.plot(f1[f1['lev_all_fjYear'].isin([5])].index, f1[f1['lev_all_fjYear'].isin([5])]['equity_curve'].values,
+#         color='g', linestyle='-', label='Local')
+# ax.plot(f1[f1['lev_all_fjYear'].isin([10])].index, f1[f1['lev_all_fjYear'].isin([10])]['equity_curve'].values,
+#         color='y', linestyle='-', label='Central')
+
+final_lev_soe.to_csv('/Users/liupanfeng/我的学习/python课件/我的数据/final_lev_soe.csv',index=None)
+df = pd.read_csv('/Users/liupanfeng/我的学习/python课件/我的数据/final_lev_soe.csv')
+df1=df[df['lev_all_fjYear']==0]
+df1 = df1[['Reptdt','equity_curve']]
+x1 = df1[['Reptdt']]
+y1 = df1[['equity_curve']]
+x1 = pd.to_datetime(x1['Reptdt'])#关键
+plt.plot(x1,y1)
+plt.show()
+plt.savefig('/Users/liupanfeng/我的学习/python课件/我的数据/final_lev_soe.jpg',format='jpg')
