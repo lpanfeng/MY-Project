@@ -1,0 +1,44 @@
+import urllib.request
+
+file = urllib.request.urlopen("http://www.baidu.com")
+data = file.read()
+dataline = file.readline()
+
+fhandle = open("/Users/liupanfeng/我的学习/爬虫/1.html","wb")
+fhandle.write(data)
+fhandle.close()
+
+#写文件的第二种方式
+filename = urllib.request.urlretrieve("http://edu.51cto.com",filename="/Users/liupanfeng/我的学习/爬虫/2.html")
+
+#清除urlretrieve运行的缓存
+urllib.request.urlcleanup()
+
+file.info()#当前环境相关信息
+file.getcode()#状态码
+file.geturl()#得到url
+
+#编码-对不符合URL标准的字符出现在URL中需要编码处理
+urllib.request.quote("http://www.sina.com.cn")
+
+#解码
+urllib.request.unquote("http%3A//www.sina.com.cn")
+
+url = 'https://www.zhihu.com/question/426037271'
+#添加报头方法一
+headers = ("User-Agent","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.1.1 Safari/605.1.15")
+opener = urllib.request.build_opener()
+opener.addheaders = [headers]
+data = opener.open(url).read()
+fhandle = open("/Users/liupanfeng/我的学习/爬虫/3.html","wb")
+fhandle.write(data)
+fhandle.close()
+
+#添加报头方法二
+url = 'https://www.zhihu.com/question/426037271'
+req = urllib.request.Request(url)
+req.add_header ("User-Agent","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.1.1 Safari/605.1.15")
+data = urllib.request.urlopen(req).read()
+fhandle = open("/Users/liupanfeng/我的学习/爬虫/4.html","wb")
+fhandle.write(data)
+fhandle.close()
